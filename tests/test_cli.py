@@ -156,7 +156,7 @@ class CliTests(unittest.TestCase):
         stdout = io.StringIO()
         with (
             mock.patch.object(cli.tempfile, "gettempdir", return_value=str(self.root)),
-            mock.patch.object(cli.webbrowser, "open", return_value=True) as opener,
+            mock.patch.object(cli, "_open_browser", return_value=True) as opener,
             redirect_stdout(stdout),
         ):
             cli.main(["--json", "browser", str(self.root_path)])
@@ -172,7 +172,7 @@ class CliTests(unittest.TestCase):
         stdout = io.StringIO()
         with (
             mock.patch.object(cli.tempfile, "gettempdir", return_value=str(self.root)),
-            mock.patch.object(cli.webbrowser, "open", return_value=True),
+            mock.patch.object(cli, "_open_browser", return_value=True),
             redirect_stdout(stdout),
         ):
             cli.main(["--json", "browser", str(self.root_path)])
@@ -183,6 +183,29 @@ class CliTests(unittest.TestCase):
     def test_non_positive_limit_is_rejected(self) -> None:
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             cli.build_parser().parse_args(["list", "--limit", "0"])
+
+    def test_linux_browser_launcher_detaches_all_terminal_streams(self) -> None:
+        with (
+            mock.patch.object(cli.sys, "platform", "linux"),
+            mock.patch.object(cli.subprocess, "Popen") as launcher,
+        ):
+            self.assertTrue(cli._open_browser("file:///tmp/transcript.html"))
+
+        launcher.assert_called_once_with(
+            ["xdg-open", "file:///tmp/transcript.html"],
+            stdin=cli.subprocess.DEVNULL,
+            stdout=cli.subprocess.DEVNULL,
+            stderr=cli.subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+
+    def test_linux_browser_launcher_reports_spawn_failure(self) -> None:
+        with (
+            mock.patch.object(cli.sys, "platform", "linux"),
+            mock.patch.object(cli.subprocess, "Popen", side_effect=OSError("missing")),
+        ):
+            self.assertFalse(cli._open_browser("file:///tmp/transcript.html"))
 
     def test_doctor_reports_newest_root_without_latest_alias(self) -> None:
         stdout = io.StringIO()

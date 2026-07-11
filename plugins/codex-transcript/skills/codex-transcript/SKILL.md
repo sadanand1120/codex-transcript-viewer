@@ -23,7 +23,7 @@ Start narrow and machine-readable:
 
 ```bash
 codex-transcript query SESSION --kind message --format jsonl --compact
-codex-transcript query robolang:SESSION_ID --kind message --format jsonl --compact
+codex-transcript query SSH_ALIAS:SESSION_ID --kind message --format jsonl --compact
 codex-transcript query SESSION --turn TURN_ID --format jsonl --compact
 codex-transcript query SESSION --tool exec --format jsonl --compact
 codex-transcript tree SESSION --format json

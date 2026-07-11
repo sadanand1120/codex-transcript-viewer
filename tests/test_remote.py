@@ -29,8 +29,12 @@ class RemoteTransportTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_reference_parser_is_strict(self) -> None:
-        remote = transport.parse_remote_reference(f"robolang:{ROOT_ID[:12]}")
-        self.assertEqual(remote, RemoteReference("robolang", ROOT_ID[:12]))
+        remote = transport.parse_remote_reference(f"research-gpu.example:{ROOT_ID[:12]}")
+        self.assertEqual(remote, RemoteReference("research-gpu.example", ROOT_ID[:12]))
+        self.assertEqual(
+            transport.parse_remote_reference(f"dynamo@compute-01:{ROOT_ID[:12]}"),
+            RemoteReference("dynamo@compute-01", ROOT_ID[:12]),
+        )
         self.assertIsNone(transport.parse_remote_reference(ROOT_ID))
         for value in ("-oProxyCommand=x:019f", "robo lang:019f", "robolang:../../etc/passwd"):
             with self.subTest(value=value), self.assertRaises(ValueError):
@@ -38,7 +42,7 @@ class RemoteTransportTests(unittest.TestCase):
 
     def test_ssh_invocation_uses_wrapper_argv_and_encoded_stdin(self) -> None:
         completed = SimpleNamespace(returncode=0, stdout=b"payload", stderr=b"")
-        remote = RemoteReference("robolang", ROOT_ID)
+        remote = RemoteReference("research-gpu.example", ROOT_ID)
         with (
             mock.patch.object(transport.shutil, "which", return_value="/usr/bin/ssh-script"),
             mock.patch.object(transport.subprocess, "run", return_value=completed) as runner,
@@ -47,7 +51,7 @@ class RemoteTransportTests(unittest.TestCase):
 
         self.assertEqual(result, b"payload")
         args, kwargs = runner.call_args
-        self.assertEqual(args[0], ["/usr/bin/ssh-script", "robolang"])
+        self.assertEqual(args[0], ["/usr/bin/ssh-script", "research-gpu.example"])
         self.assertNotIn(ROOT_ID.encode(), kwargs["input"])
         self.assertFalse(kwargs.get("shell", False))
 
@@ -138,7 +142,7 @@ class RemoteTransportTests(unittest.TestCase):
 
             with (
                 mock.patch.object(cli.tempfile, "gettempdir", return_value=str(self.root)),
-                mock.patch.object(cli.webbrowser, "open", return_value=True) as opener,
+                mock.patch.object(cli, "_open_browser", return_value=True) as opener,
                 redirect_stdout(io.StringIO()),
             ):
                 cli.main(["--json", "browser", remote.display])

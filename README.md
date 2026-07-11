@@ -28,7 +28,7 @@ The installer adds the `codex-transcript` marketplace from GitHub and installs `
 codex-transcript list --limit 10
 codex-transcript render SESSION --output transcript.html
 codex-transcript browser SESSION
-codex-transcript browser robolang:SESSION_ID
+codex-transcript browser SSH_ALIAS:SESSION_ID
 ```
 
 `browser` writes a deterministic private HTML file under the system temporary directory and opens it with the default browser.

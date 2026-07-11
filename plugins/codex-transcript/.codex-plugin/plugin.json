@@ -1,6 +1,6 @@
 {
   "name": "codex-transcript",
-  "version": "0.4.0+codex.20260711192427",
+  "version": "0.4.1+codex.20260711193614",
   "description": "Inspect, query, export, and render local or SSH-remote Codex session logs.",
   "author": {
     "name": "Sadanand Modak",

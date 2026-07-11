@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import webbrowser
@@ -56,7 +57,7 @@ def _version() -> str:
     try:
         return version("codex-transcript-viewer")
     except PackageNotFoundError:
-        return "0.4.0"
+        return "0.4.1"
 
 
 def _safe_filename(value: str) -> str:
@@ -75,6 +76,23 @@ def _open_private(path: Path):
 def _write_private(path: Path, text: str) -> None:
     with _open_private(path) as output:
         output.write(text)
+
+
+def _open_browser(uri: str) -> bool:
+    if not sys.platform.startswith("linux"):
+        return webbrowser.open(uri)
+    try:
+        subprocess.Popen(
+            ["xdg-open", uri],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
 
 
 def _redact(value: Any) -> Any:
@@ -390,7 +408,7 @@ def run(args: argparse.Namespace) -> None:
             data = _render(path, output, args)
             if source.remote:
                 data["source"] = source.remote.display
-            opened = webbrowser.open(output.as_uri())
+            opened = _open_browser(output.as_uri())
             if not opened:
                 raise RuntimeError(f"default browser did not accept {output}")
             data["opened"] = True
