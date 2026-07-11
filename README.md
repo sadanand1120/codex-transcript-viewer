@@ -1,67 +1,76 @@
 # codex-transcript-viewer
 
-Converts Codex CLI JSONL session transcripts into single-file HTML viewers with sidebar navigation, search, and filtering. No external dependencies. Just open the `.html` in any browser.
+Lossless, local inspection for Codex CLI JSONL sessions. One standard-library Python core powers:
 
-![Viewer showing a final answer with sidebar navigation and filters](docs/images/final-answer.png)
+- `codex-transcript`, a human and agent-friendly CLI
+- self-contained HTML transcripts
+- compact JSONL/Markdown exports and focused queries
+- parent/subagent session trees
+- a Codex plugin with deterministic usage guidance
 
-See the [full demo](docs/demo.md) for more screenshots and a walkthrough of every feature.
+This is a fork of [masonc15/codex-transcript-viewer](https://github.com/masonc15/codex-transcript-viewer). The original HTML viewer remains the visual foundation.
 
 ## Install
 
-```
-git clone https://github.com/masonc15/codex-transcript-viewer.git
-uv tool install ./codex-transcript-viewer
-```
+Clone the fork, then install the editable CLI and GitHub-backed Codex plugin:
 
-Or run directly without installing:
-
-```
-uv run --directory ./codex-transcript-viewer codex-transcript-viewer <session.jsonl>
+```bash
+git clone https://github.com/sadanand1120/codex-transcript-viewer.git
+cd codex-transcript-viewer
+./scripts/install-local.sh
 ```
 
-## Usage
+The installer adds the `codex-transcript` marketplace from GitHub and installs `codex-transcript@codex-transcript`.
 
-```
-codex-transcript-viewer <session.jsonl> [output.html]
-```
+## Human commands
 
-If you omit the output path it writes `<input-stem>.html` in the current directory.
-
-Codex stores sessions as JSONL files under `~/.codex/sessions/`. Find one and point the tool at it:
-
-```
-codex-transcript-viewer ~/.codex/sessions/2026/02/18/rollout-2026-02-18T10-06-22-019c7149.jsonl
-open rollout-2026-02-18T10-06-22-019c7149.html
+```bash
+codex-transcript list --limit 10
+codex-transcript render latest --output transcript.html
+codex-transcript browser latest
 ```
 
-## What the viewer shows
+`browser` writes a deterministic private HTML file under the system temporary directory and opens it with the default browser.
 
-The HTML output has a sticky sidebar on the left with a scrollable event tree and a main content area on the right. Each event type gets its own visual treatment:
+## Agent commands
 
-- User messages with green left border
-- Final answers highlighted with a subtle green background
-- Commentary (intermediary updates) in italic with a muted border
-- Reasoning summaries in gray italic
-- Tool calls showing the command or JSON arguments
-- Tool outputs with click-to-expand for long content
-- System events (turn started, aborted, rolled back) in dim text
-- Token usage counters
-
-The sidebar supports text search and preset filters (Default, No tools, User only, Answers, All). On mobile the sidebar collapses behind a hamburger menu.
-
-## Credits
-
-Inspired by the HTML session export in [pi](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent), a coding agent by [@badlogic](https://github.com/badlogic).
-
-## Project structure
-
+```bash
+codex-transcript --json doctor
+codex-transcript query latest --kind message --format jsonl --compact
+codex-transcript query SESSION --turn TURN_ID --compact
+codex-transcript export SESSION --format jsonl --compact --redact --output session.jsonl
+codex-transcript tree SESSION --format json
+codex-transcript raw SESSION --line 42 --redact
 ```
-src/codex_transcript_viewer/
-  parser.py       - JSONL parsing and event extraction
-  markdown.py     - lightweight markdown-to-HTML conversion
-  formatting.py   - timestamp formatting helpers
-  html_builder.py - assembles the final HTML from events
-  style.css       - all CSS for the viewer
-  viewer.js       - sidebar filtering and navigation
-  cli.py          - command-line entry point
+
+`SESSION` accepts a JSONL path, exact session ID, unique ID prefix, or `latest`. `latest` means the newest root/user session.
+
+## Data policy
+
+- Every parsed line receives a versioned normalized envelope.
+- Unknown records and malformed JSON remain visible instead of being silently discarded.
+- Function and custom tool calls/results retain their `call_id` relationship.
+- Subagent identity uses the first `session_meta`; copied parent history is marked `inherited` and excluded by default.
+- Raw JSON is preserved by default. `--compact` removes raw known records and truncates large values.
+- JSONL export and query stream records instead of loading the whole transcript.
+
+Generated files use owner-only permissions. They may still contain commands, paths, prompts, and tool output. `--redact` performs best-effort redaction of secret-like keys, assignments, and authorization headers; inspect every artifact before sharing.
+
+## Plugin layout
+
+```text
+.agents/plugins/marketplace.json
+plugins/codex-transcript/.codex-plugin/plugin.json
+plugins/codex-transcript/skills/codex-transcript/SKILL.md
 ```
+
+The CLI is deterministic infrastructure. The plugin teaches Codex to discover sessions, query narrowly, inspect subagent trees, prefer compact structured evidence, and reserve `browser` for human-facing use.
+
+## Development
+
+```bash
+uv run --no-project --python 3.11 --with-editable . python -m unittest discover -s tests -v
+uv build
+```
+
+The runtime has no third-party dependencies.

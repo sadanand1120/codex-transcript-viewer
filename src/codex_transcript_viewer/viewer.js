@@ -1,4 +1,4 @@
-// Sidebar filtering and navigation for Codex session transcript viewer.
+// Full-transcript filtering and navigation.
 
 const allNodes = document.querySelectorAll('.tree-node');
 let activeFilter = 'default';
@@ -14,48 +14,47 @@ function filterTree(search) {
   applyFilters(search);
 }
 
+function roleVisible(classes, text) {
+  if (activeFilter === 'no-tools') {
+    return !classes.includes('tree-role-tool') && !classes.includes('tree-role-system');
+  }
+  if (activeFilter === 'user-only') return classes.includes('tree-role-user');
+  if (activeFilter === 'answers') {
+    return classes.includes('tree-role-user') ||
+      (classes.includes('tree-role-assistant') && text.includes('\u2705'));
+  }
+  if (activeFilter === 'default') {
+    return !classes.includes('tree-role-system') && !classes.includes('tree-role-thinking');
+  }
+  return true;
+}
+
 function applyFilters(search) {
   search = (search || document.getElementById('tree-search').value).toLowerCase();
   allNodes.forEach(node => {
-    const text = node.textContent.toLowerCase();
-    const classes = node.className;
-    let visible = true;
-
-    if (activeFilter === 'no-tools') {
-      visible = !classes.includes('tree-role-tool') && !classes.includes('tree-role-system');
-    } else if (activeFilter === 'user-only') {
-      visible = classes.includes('tree-role-user');
-    } else if (activeFilter === 'answers') {
-      visible = classes.includes('tree-role-user') || (classes.includes('tree-role-assistant') && text.includes('\u2705'));
-    } else if (activeFilter === 'default') {
-      visible = !classes.includes('tree-role-system') && !classes.includes('tree-role-thinking');
-    }
-
-    if (visible && search) {
-      visible = text.includes(search);
-    }
-
+    const id = node.getAttribute('href')?.slice(1);
+    const target = id ? document.getElementById(id) : null;
+    const searchable = `${node.textContent} ${target?.textContent || ''}`.toLowerCase();
+    const visible = roleVisible(node.className, node.textContent) &&
+      (!search || searchable.includes(search));
     node.style.display = visible ? '' : 'none';
+    if (target) target.style.display = visible ? '' : 'none';
   });
 }
 
-// Smooth scroll to target on sidebar click
-document.querySelectorAll('.tree-node').forEach(node => {
+allNodes.forEach(node => {
   node.addEventListener('click', function(e) {
     e.preventDefault();
     const id = this.getAttribute('href')?.slice(1);
-    if (id) {
-      const el = document.getElementById(id);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.style.outline = '2px solid var(--accent)';
-        setTimeout(() => el.style.outline = '', 2000);
-      }
+    const target = id ? document.getElementById(id) : null;
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.style.outline = '2px solid var(--accent)';
+      setTimeout(() => target.style.outline = '', 2000);
     }
-    document.querySelectorAll('.tree-node').forEach(n => n.classList.remove('active'));
+    allNodes.forEach(n => n.classList.remove('active'));
     this.classList.add('active');
   });
 });
 
-// Apply default filter on load
 applyFilters();

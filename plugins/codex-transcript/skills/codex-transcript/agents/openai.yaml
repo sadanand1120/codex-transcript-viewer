@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Transcript"
+  short_description: "Inspect and render Codex session logs"
+  default_prompt: "Use $codex-transcript to inspect this Codex session and return compact evidence."

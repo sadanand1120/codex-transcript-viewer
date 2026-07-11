@@ -24,6 +24,12 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
     branch = meta.get("git", {}).get("branch", "") if meta else ""
     commit = (meta.get("git", {}).get("commit_hash", "") or "")[:12] if meta else ""
     session_ts = meta.get("timestamp", "") if meta else ""
+    thread_source = meta.get("thread_source", "") if meta else ""
+    source = meta.get("source") if meta else None
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else {}
+    spawn = spawn if isinstance(spawn, dict) else {}
+    parent_id = spawn.get("parent_thread_id", "")
 
     sidebar_items: list[str] = []
     message_blocks: list[str] = []
@@ -60,6 +66,8 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
         cli_version=escape(cli_version),
         cwd=escape(cwd),
         git_info=escape(branch) + ((" @ " + escape(commit)) if commit else ""),
+        thread_source=escape(thread_source),
+        parent_id=escape(parent_id),
         generated=generated,
     )
 
@@ -114,26 +122,33 @@ def _render_agent_commentary(evt, ts, anchor, sidebar, messages):
 def _render_assistant_text(evt, ts, anchor, sidebar, messages):
     phase_label = f' ({evt["phase"]})' if evt.get("phase") else ""
     preview = evt["text"][:60].replace("\n", " ")
+    is_final = evt.get("phase") == "final_answer"
+    icon = "\u2705" if is_final else "\U0001f916"
+    final_class = " final-answer" if is_final else ""
+    final_label = " \u2014 final answer" if is_final else ""
     sidebar.append(
         f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
-        f'<span class="tree-content">\U0001f916 {escape(preview)}</span></a>'
+        f'<span class="tree-content">{icon} {escape(preview)}</span></a>'
     )
     messages.append(
-        f'<div class="assistant-message" id="{anchor}">'
-        f'<div class="message-timestamp">{ts}{escape(phase_label)}</div>'
+        f'<div class="assistant-message{final_class}" id="{anchor}">'
+        f'<div class="message-timestamp">{ts}{escape(phase_label)}{final_label}</div>'
         f'<div class="assistant-text markdown-content">{render_markdown(evt["text"])}</div>'
         f"</div>"
     )
 
 
 def _render_tool_call(evt, ts, anchor, sidebar, messages):
-    name = evt["name"]
+    name = str(evt.get("name") or evt.get("raw_type") or "tool")
+    arguments = evt.get("arguments", evt.get("input", ""))
+    if not isinstance(arguments, str):
+        arguments = json.dumps(arguments, ensure_ascii=False)
     try:
-        args = json.loads(evt["arguments"])
+        args = json.loads(arguments)
         args_preview = args.get("cmd", "")[:80] if name == "exec_command" else json.dumps(args, indent=None)[:80]
     except (json.JSONDecodeError, TypeError):
-        args_preview = evt["arguments"][:80]
+        args_preview = arguments[:80]
 
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
@@ -142,16 +157,16 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages):
     )
 
     try:
-        args_obj = json.loads(evt["arguments"])
+        args_obj = json.loads(arguments)
         if name == "exec_command":
             args_display = f'<span class="tool-command">$ {escape(args_obj.get("cmd", ""))}</span>'
         else:
             args_display = f"<pre>{escape(json.dumps(args_obj, indent=2))}</pre>"
     except (json.JSONDecodeError, TypeError):
-        args_display = f"<pre>{escape(evt['arguments'])}</pre>"
+        args_display = f"<pre>{escape(arguments)}</pre>"
 
     messages.append(
-        f'<div class="tool-execution pending" id="{anchor}">'
+        f'<div class="tool-execution" id="{anchor}">'
         f'<div class="message-timestamp">{ts}</div>'
         f'<div class="tool-header"><span class="tool-name">{escape(name)}</span></div>'
         f'<div class="tool-args">{args_display}</div>'
@@ -160,9 +175,10 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages):
 
 
 def _render_tool_output(evt, ts, anchor, sidebar, messages):
-    output = evt["output"]
+    output = evt.get("output", "")
+    if not isinstance(output, str):
+        output = json.dumps(output, ensure_ascii=False, indent=2)
     truncated = len(output) > 2000
-    preview = output[:2000]
 
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
@@ -170,20 +186,14 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages):
         f'<span class="tree-content">\U0001f4e4 output ({len(output)} chars)</span></a>'
     )
 
-    expandable_class = " expandable" if truncated else ""
-    expand_hint = (
-        f'\n<span class="expand-hint">[click to expand {len(output)} chars]</span>'
-        if truncated
-        else ""
-    )
-
-    messages.append(
-        f'<div class="tool-execution success" id="{anchor}">'
-        f'<div class="tool-output{expandable_class}" onclick="this.classList.toggle(\'expanded\')">'
-        f'<div class="output-preview"><pre>{escape(preview)}{expand_hint}</pre></div>'
-        f'<div class="output-full"><pre>{escape(output)}</pre></div>'
-        f"</div></div>"
-    )
+    if truncated:
+        body = (
+            f'<details class="tool-output"><summary>Show {len(output):,} characters</summary>'
+            f'<pre>{escape(output)}</pre></details>'
+        )
+    else:
+        body = f'<div class="tool-output"><pre>{escape(output)}</pre></div>'
+    messages.append(f'<div class="tool-execution success" id="{anchor}">{body}</div>')
 
 
 def _render_task_complete(evt, ts, anchor, sidebar, messages):
@@ -267,6 +277,51 @@ def _render_token_count(evt, ts, anchor, sidebar, messages):
     )
 
 
+def _render_subagent_activity(evt, ts, anchor, sidebar, messages):
+    agent = escape(evt.get("agent_path") or evt.get("agent_thread_id") or "subagent")
+    activity = escape(evt.get("kind") or "activity")
+    sidebar.append(
+        f'<a class="tree-node tree-role-system" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\U0001f500 {agent}: {activity}</span></a>'
+    )
+    messages.append(
+        f'<div class="system-event" id="{anchor}"><div class="message-timestamp">{ts}</div>'
+        f'<span class="event-label">\U0001f500 {agent}: {activity}</span></div>'
+    )
+
+
+def _render_inter_agent_message(evt, ts, anchor, sidebar, messages):
+    author = escape(evt.get("author") or "agent")
+    recipient = escape(evt.get("recipient") or "agent")
+    text = evt.get("text", "")
+    sidebar.append(
+        f'<a class="tree-node tree-role-assistant" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\U0001f4e8 {author} \u2192 {recipient}</span></a>'
+    )
+    messages.append(
+        f'<div class="commentary-message" id="{anchor}"><div class="message-timestamp">'
+        f'{ts} \u00b7 {author} \u2192 {recipient}</div>'
+        f'<div class="markdown-content">{render_markdown(text)}</div></div>'
+    )
+
+
+def _render_system_detail(evt, ts, anchor, sidebar, messages):
+    label = escape(str(evt.get("type", "event")).replace("_", " "))
+    detail = evt.get("detail") or evt.get("text") or evt.get("status") or evt.get("raw_type") or ""
+    sidebar.append(
+        f'<a class="tree-node tree-role-system" href="#{anchor}">'
+        f'<span class="tree-ts">{ts}</span> '
+        f'<span class="tree-content">\u2022 {label}</span></a>'
+    )
+    messages.append(
+        f'<div class="system-event" id="{anchor}"><div class="message-timestamp">{ts}</div>'
+        f'<span class="event-label">{label}</span>'
+        f'{f"<pre>{escape(detail)}</pre>" if detail else ""}</div>'
+    )
+
+
 _EVENT_HANDLERS = {
     "user_message": _render_user_message,
     "reasoning": _render_reasoning,
@@ -279,6 +334,19 @@ _EVENT_HANDLERS = {
     "turn_aborted": _render_turn_aborted,
     "thread_rolled_back": _render_thread_rolled_back,
     "token_count": _render_token_count,
+    "sub_agent_activity": _render_subagent_activity,
+    "inter_agent_message": _render_inter_agent_message,
+    "patch_apply_begin": _render_system_detail,
+    "patch_apply_end": _render_system_detail,
+    "thread_settings_applied": _render_system_detail,
+    "web_search_begin": _render_system_detail,
+    "web_search_end": _render_system_detail,
+    "turn_context": _render_system_detail,
+    "world_state": _render_system_detail,
+    "compacted": _render_system_detail,
+    "inter_agent_communication_metadata": _render_system_detail,
+    "unknown": _render_system_detail,
+    "parse_error": _render_system_detail,
 }
 
 
@@ -324,6 +392,8 @@ _HTML_TEMPLATE = """\
           <div class="info-item"><span class="info-label">CLI Version</span><span class="info-value">{cli_version}</span></div>
           <div class="info-item"><span class="info-label">Working Dir</span><span class="info-value">{cwd}</span></div>
           <div class="info-item"><span class="info-label">Git Branch</span><span class="info-value">{git_info}</span></div>
+          <div class="info-item"><span class="info-label">Thread Source</span><span class="info-value">{thread_source}</span></div>
+          <div class="info-item"><span class="info-label">Parent Thread</span><span class="info-value">{parent_id}</span></div>
         </div>
       </div>
       <div id="messages">{messages_html}</div>

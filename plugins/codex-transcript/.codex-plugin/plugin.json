@@ -1,0 +1,23 @@
+{
+  "name": "codex-transcript",
+  "version": "0.2.0",
+  "description": "Inspect, query, export, and render Codex session logs through the local codex-transcript CLI.",
+  "author": {
+    "name": "Sadanand Modak",
+    "url": "https://github.com/sadanand1120"
+  },
+  "homepage": "https://github.com/sadanand1120/codex-transcript-viewer",
+  "repository": "https://github.com/sadanand1120/codex-transcript-viewer",
+  "license": "MIT",
+  "keywords": ["codex", "transcript", "session", "jsonl"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Transcript",
+    "shortDescription": "Inspect Codex sessions with a lossless local CLI.",
+    "longDescription": "Codex Transcript gives agents concise guidance for discovering, querying, exporting, and rendering Codex session logs without discarding unknown events or subagent relationships.",
+    "developerName": "Sadanand Modak",
+    "category": "Productivity",
+    "capabilities": ["skills"],
+    "defaultPrompt": "Use $codex-transcript to inspect this Codex session and return compact evidence."
+  }
+}
