@@ -28,6 +28,7 @@ The installer adds the `codex-transcript` marketplace from GitHub and installs `
 codex-transcript list --limit 10
 codex-transcript render SESSION --output transcript.html
 codex-transcript browser SESSION
+codex-transcript browser robolang:SESSION_ID
 ```
 
 `browser` writes a deterministic private HTML file under the system temporary directory and opens it with the default browser.
@@ -45,7 +46,9 @@ codex-transcript tree SESSION --format json
 codex-transcript raw SESSION --line 42 --redact
 ```
 
-`SESSION` accepts a JSONL path, exact session ID, or unique ID prefix. Use `list` to discover session IDs.
+`SESSION` accepts a local JSONL path, local session ID/prefix, or `SSH_HOST:SESSION_ID`. Remote references work with `render`, `browser`, `export`, `query`, `tree`, and `raw`.
+
+Remote sessions are fetched through `ssh-script`, parsed locally, and removed from private staging when the command finishes. Browser HTML, exports, and every other final output stay on the current machine; the remote session is never modified. Remote hosts need only Python 3 and a configured SSH alias. When supplied with a remote reference, `--sessions-dir` refers to the remote sessions directory.
 
 ## Data policy
 

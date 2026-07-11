@@ -18,12 +18,12 @@ from .discovery import (
     default_sessions_dir,
     list_sessions,
     read_session_meta,
-    resolve_session,
     session_files,
     session_summary,
 )
 from .html_builder import build_html
 from .parser import SCHEMA_VERSION, iter_normalized, load_session, viewer_projection
+from .transport import build_remote_tree, open_session_source, parse_remote_reference
 
 
 _SECRET_KEY = re.compile(
@@ -56,7 +56,7 @@ def _version() -> str:
     try:
         return version("codex-transcript-viewer")
     except PackageNotFoundError:
-        return "0.3.0"
+        return "0.4.0"
 
 
 def _safe_filename(value: str) -> str:
@@ -243,7 +243,10 @@ def _print_result(data: Any, as_json: bool) -> None:
 
 
 def _add_session_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("session", help="JSONL path, exact session ID, or unique ID prefix")
+    parser.add_argument(
+        "session",
+        help="JSONL path, session ID/prefix, or SSH_HOST:SESSION_ID",
+    )
     parser.add_argument("--include-inherited", action="store_true", help="include copied parent history in subagent logs")
 
 
@@ -296,7 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument("--output", default="-")
 
     tree = subparsers.add_parser("tree", help="show parent and subagent session relationships")
-    tree.add_argument("session")
+    tree.add_argument("session", help="session ID/prefix or SSH_HOST:SESSION_ID")
     tree.add_argument("--format", choices=("text", "json"), default="text")
 
     raw = subparsers.add_parser("raw", help="read one exact raw JSONL record")
@@ -350,38 +353,55 @@ def run(args: argparse.Namespace) -> None:
         _print_result(data, args.json)
         return
 
+    local_candidate = Path(args.session).expanduser()
+    remote = None if local_candidate.is_file() else parse_remote_reference(args.session)
+
     if args.command == "tree":
-        data = build_tree(args.session, sessions_dir)
+        data = (
+            build_remote_tree(remote, args.sessions_dir)
+            if remote
+            else build_tree(args.session, sessions_dir)
+        )
         _print_result(data if args.format == "json" else _tree_text(data), args.json or args.format == "json")
         return
 
-    path = resolve_session(args.session, sessions_dir)
-    if args.command == "raw":
-        data = _read_raw(path, args.line)
-        _print_result(_redact(data) if args.redact else data, args.json)
-    elif args.command == "render":
-        data = _render(path, Path(args.output).expanduser().resolve(), args)
-        _print_result(data, args.json)
-    elif args.command == "browser":
-        meta = read_session_meta(path)
-        session_id = str(meta.get("id") or meta.get("session_id") or path.stem)
-        if args.output:
-            output = Path(args.output).expanduser().resolve()
-        else:
-            directory = Path(tempfile.gettempdir()) / "codex-transcript"
-            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-            directory.chmod(0o700)
-            output = directory / f"{_safe_filename(session_id)}.html"
-        data = _render(path, output, args)
-        opened = webbrowser.open(output.as_uri())
-        if not opened:
-            raise RuntimeError(f"default browser did not accept {output}")
-        data["opened"] = True
-        _print_result(data, args.json)
-    elif args.command in {"export", "query"}:
-        count = _emit_events(_selected_events(path, args), args.format, args.output)
-        if args.output != "-":
-            _print_result({"path": str(Path(args.output).resolve()), "events": count}, args.json)
+    source_dir = args.sessions_dir if remote else sessions_dir
+    with open_session_source(args.session, source_dir) as source:
+        path = source.path
+        if args.command == "raw":
+            data = _read_raw(path, args.line)
+            _print_result(_redact(data) if args.redact else data, args.json)
+        elif args.command == "render":
+            data = _render(path, Path(args.output).expanduser().resolve(), args)
+            if source.remote:
+                data["source"] = source.remote.display
+            _print_result(data, args.json)
+        elif args.command == "browser":
+            meta = read_session_meta(path)
+            session_id = str(meta.get("id") or meta.get("session_id") or path.stem)
+            if args.output:
+                output = Path(args.output).expanduser().resolve()
+            else:
+                directory = Path(tempfile.gettempdir()) / "codex-transcript"
+                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+                directory.chmod(0o700)
+                name = f"{source.remote.host}-{session_id}" if source.remote else session_id
+                output = directory / f"{_safe_filename(name)}.html"
+            data = _render(path, output, args)
+            if source.remote:
+                data["source"] = source.remote.display
+            opened = webbrowser.open(output.as_uri())
+            if not opened:
+                raise RuntimeError(f"default browser did not accept {output}")
+            data["opened"] = True
+            _print_result(data, args.json)
+        elif args.command in {"export", "query"}:
+            count = _emit_events(_selected_events(path, args), args.format, args.output)
+            if args.output != "-":
+                result = {"path": str(Path(args.output).resolve()), "events": count}
+                if source.remote:
+                    result["source"] = source.remote.display
+                _print_result(result, args.json)
 
 
 def main(argv: list[str] | None = None) -> None:

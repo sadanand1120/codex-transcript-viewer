@@ -1,7 +1,7 @@
 {
   "name": "codex-transcript",
-  "version": "0.3.0+codex.20260711154944",
-  "description": "Inspect, query, export, and render Codex session logs through the local codex-transcript CLI.",
+  "version": "0.4.0+codex.20260711192427",
+  "description": "Inspect, query, export, and render local or SSH-remote Codex session logs.",
   "author": {
     "name": "Sadanand Modak",
     "url": "https://github.com/sadanand1120"

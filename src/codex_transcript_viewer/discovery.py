@@ -34,6 +34,21 @@ def read_session_meta(path: str | Path) -> dict[str, Any]:
 def session_summary(path: str | Path) -> dict[str, Any]:
     path = Path(path)
     meta = read_session_meta(path)
+    return session_summary_from_meta(
+        meta,
+        str(path.resolve()),
+        size=path.stat().st_size,
+        mtime=path.stat().st_mtime,
+    )
+
+
+def session_summary_from_meta(
+    meta: dict[str, Any],
+    path: str,
+    *,
+    size: int,
+    mtime: float,
+) -> dict[str, Any]:
     source = meta.get("source")
     subagent = source.get("subagent") if isinstance(source, dict) else None
     spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else {}
@@ -46,9 +61,9 @@ def session_summary(path: str | Path) -> dict[str, Any]:
         "agent_path": str(spawn.get("agent_path") or ""),
         "agent_nickname": str(spawn.get("agent_nickname") or ""),
         "cwd": str(meta.get("cwd") or ""),
-        "path": str(path.resolve()),
-        "bytes": path.stat().st_size,
-        "mtime": path.stat().st_mtime,
+        "path": path,
+        "bytes": size,
+        "mtime": mtime,
     }
 
 
@@ -85,8 +100,15 @@ def resolve_session(reference: str, sessions_dir: str | Path | None = None) -> P
 def build_tree(reference: str, sessions_dir: str | Path | None = None) -> dict[str, Any]:
     target = resolve_session(reference, sessions_dir)
     summaries = [session_summary(path) for path in session_files(sessions_dir)]
-    by_id = {item["id"]: item for item in summaries if item["id"]}
     target_id = session_summary(target)["id"]
+    return build_tree_from_summaries(target_id, summaries)
+
+
+def build_tree_from_summaries(
+    target_id: str,
+    summaries: list[dict[str, Any]],
+) -> dict[str, Any]:
+    by_id = {item["id"]: item for item in summaries if item["id"]}
     root_id = target_id
     seen: set[str] = set()
     while root_id in by_id and by_id[root_id]["parent_id"] and root_id not in seen:
