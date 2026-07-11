@@ -177,7 +177,7 @@ def viewer_projection(
         if fallback is not None:
             projected.append(fallback)
 
-    reconciled = _reconcile_events(projected)
+    reconciled = _group_rolled_back_turns(_reconcile_events(projected))
     return session.get("meta") or {}, [
         _strip_internal_keys(event) for event in reconciled
     ]
@@ -1043,5 +1043,45 @@ def _reconcile_events(events: list[dict]) -> list[dict]:
     return _drop_overlapped_event_msg_events(merged)
 
 
+def _group_rolled_back_turns(events: list[dict]) -> list[dict]:
+    active_events: list[dict] = []
+    active_turns: list[int] = []
+
+    for event in events:
+        turn_seq = event.get("_turn_seq", 0)
+        if event.get("type") == "task_started" and turn_seq:
+            active_turns.append(turn_seq)
+
+        if event.get("type") != "thread_rolled_back":
+            active_events.append(event)
+            continue
+
+        count = min(max(event.get("num_turns", 0), 0), len(active_turns))
+        rolled_turns = set(active_turns[-count:]) if count else set()
+        if count:
+            del active_turns[-count:]
+
+        rolled_events = [
+            candidate
+            for candidate in active_events
+            if candidate.get("_turn_seq") in rolled_turns
+        ]
+        active_events = [
+            candidate
+            for candidate in active_events
+            if candidate.get("_turn_seq") not in rolled_turns
+        ]
+        marker = event.copy()
+        marker["rolled_back_events"] = rolled_events
+        active_events.append(marker)
+
+    return active_events
+
+
 def _strip_internal_keys(event: dict) -> dict:
-    return {k: v for k, v in event.items() if not k.startswith("_")}
+    cleaned = {k: v for k, v in event.items() if not k.startswith("_")}
+    if "rolled_back_events" in cleaned:
+        cleaned["rolled_back_events"] = [
+            _strip_internal_keys(child) for child in cleaned["rolled_back_events"]
+        ]
+    return cleaned

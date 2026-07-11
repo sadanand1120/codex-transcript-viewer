@@ -74,13 +74,6 @@ def resolve_session(reference: str, sessions_dir: str | Path | None = None) -> P
         return candidate.resolve()
 
     summaries = [session_summary(path) for path in session_files(sessions_dir)]
-    if reference == "latest":
-        roots = [item for item in summaries if item["thread_source"] != "subagent"]
-        if not roots:
-            raise FileNotFoundError("no root Codex sessions found")
-        roots.sort(key=lambda item: (item["timestamp"], item["mtime"]), reverse=True)
-        return Path(roots[0]["path"])
-
     matches = [item for item in summaries if item["id"].startswith(reference)]
     if not matches:
         raise FileNotFoundError(f"session not found: {reference}")

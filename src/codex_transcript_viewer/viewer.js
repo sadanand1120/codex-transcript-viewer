@@ -29,6 +29,21 @@ function roleVisible(classes, text) {
   return true;
 }
 
+function archiveVisible(event) {
+  const classes = event.className;
+  if (activeFilter === 'no-tools') {
+    return !classes.includes('tree-role-tool') && !classes.includes('tree-role-system');
+  }
+  if (activeFilter === 'user-only') return classes.includes('tree-role-user');
+  if (activeFilter === 'answers') {
+    return classes.includes('tree-role-user') || !!event.querySelector('.final-answer');
+  }
+  if (activeFilter === 'default') {
+    return !classes.includes('tree-role-system') && !classes.includes('tree-role-thinking');
+  }
+  return true;
+}
+
 function applyFilters(search) {
   search = (search || document.getElementById('tree-search').value).toLowerCase();
   allNodes.forEach(node => {
@@ -40,6 +55,11 @@ function applyFilters(search) {
     node.style.display = visible ? '' : 'none';
     if (target) target.style.display = visible ? '' : 'none';
   });
+  document.querySelectorAll('.rollback-event').forEach(event => {
+    const visible = archiveVisible(event) &&
+      (!search || event.textContent.toLowerCase().includes(search));
+    event.style.display = visible ? '' : 'none';
+  });
 }
 
 allNodes.forEach(node => {
@@ -48,6 +68,7 @@ allNodes.forEach(node => {
     const id = this.getAttribute('href')?.slice(1);
     const target = id ? document.getElementById(id) : null;
     if (target) {
+      if (target.tagName === 'DETAILS') target.open = true;
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       target.style.outline = '2px solid var(--accent)';
       setTimeout(() => target.style.outline = '', 2000);

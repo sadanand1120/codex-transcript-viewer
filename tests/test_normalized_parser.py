@@ -320,6 +320,51 @@ class NormalizedParserTests(unittest.TestCase):
         self.assertNotIn("task_complete", types)
         self.assertEqual(compact_types, types)
 
+    def test_viewer_projection_archives_only_currently_active_rolled_back_turns(self) -> None:
+        entries = [
+            _entry("session_meta", {"id": "session-1"}),
+            _entry("event_msg", {"type": "task_started", "turn_id": "turn-a"}),
+            _entry("event_msg", {"type": "user_message", "message": "active A"}),
+            _entry("event_msg", {"type": "task_started", "turn_id": "turn-b"}),
+            _entry("event_msg", {"type": "user_message", "message": "archived B"}),
+            _entry(
+                "response_item",
+                {"type": "custom_tool_call", "name": "exec", "input": "archived tool"},
+            ),
+            _entry("event_msg", {"type": "thread_rolled_back", "num_turns": 1}),
+            _entry("event_msg", {"type": "task_started", "turn_id": "turn-c"}),
+            _entry("event_msg", {"type": "user_message", "message": "active C"}),
+            _entry("event_msg", {"type": "thread_rolled_back", "num_turns": 2}),
+            _entry("event_msg", {"type": "task_started", "turn_id": "turn-d"}),
+            _entry("event_msg", {"type": "user_message", "message": "active D"}),
+        ]
+
+        _meta, events = viewer_projection(normalize_entries(entries))
+        top_level_messages = [
+            event["text"] for event in events if event["type"] == "user_message"
+        ]
+        rollbacks = [event for event in events if event["type"] == "thread_rolled_back"]
+
+        self.assertEqual(top_level_messages, ["active D"])
+        self.assertEqual(
+            [event["text"] for event in rollbacks[0]["rolled_back_events"] if event["type"] == "user_message"],
+            ["archived B"],
+        )
+        self.assertEqual(
+            [event["text"] for event in rollbacks[1]["rolled_back_events"] if event["type"] == "user_message"],
+            ["active A", "active C"],
+        )
+        self.assertNotIn("_turn_seq", json.dumps(events))
+
+        html = build_html({"id": "session-1"}, events)
+        self.assertIn('class="rollback-block"', html)
+        self.assertIn('class="rollback-content"', html)
+        self.assertIn('class="tree-node tree-role-rollback"', html)
+        self.assertIn('class="rollback-event tree-role-tool"', html)
+        self.assertIn("function archiveVisible", html)
+        self.assertNotIn('class="rollback-block" open', html)
+        self.assertIn("archived B", html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -56,7 +56,7 @@ def _version() -> str:
     try:
         return version("codex-transcript-viewer")
     except PackageNotFoundError:
-        return "0.2.0"
+        return "0.3.0"
 
 
 def _safe_filename(value: str) -> str:
@@ -243,7 +243,7 @@ def _print_result(data: Any, as_json: bool) -> None:
 
 
 def _add_session_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("session", help="JSONL path, exact ID, unique ID prefix, or latest")
+    parser.add_argument("session", help="JSONL path, exact session ID, or unique ID prefix")
     parser.add_argument("--include-inherited", action="store_true", help="include copied parent history in subagent logs")
 
 
@@ -329,18 +329,16 @@ def _read_raw(path: Path, line_number: int) -> Any:
 def run(args: argparse.Namespace) -> None:
     sessions_dir = args.sessions_dir or default_sessions_dir()
     if args.command == "doctor":
-        sessions = list_sessions(sessions_dir, limit=1)
-        try:
-            latest_root = session_summary(resolve_session("latest", sessions_dir))
-        except FileNotFoundError:
-            latest_root = None
+        sessions = [session_summary(path) for path in session_files(sessions_dir)]
+        sessions.sort(key=lambda item: (item["timestamp"], item["mtime"]), reverse=True)
+        roots = [item for item in sessions if item["thread_source"] != "subagent"]
         data = {
             "version": _version(),
             "python": sys.version.split()[0],
             "sessions_dir": str(Path(sessions_dir).expanduser()),
             "sessions_dir_exists": Path(sessions_dir).expanduser().is_dir(),
-            "session_count": len(session_files(sessions_dir)),
-            "latest_root": latest_root,
+            "session_count": len(sessions),
+            "newest_root": roots[0] if roots else None,
             "newest_session": sessions[0] if sessions else None,
             "auth_required": False,
         }

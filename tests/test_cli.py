@@ -98,8 +98,10 @@ class CliTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def test_resolve_latest_prefers_root_and_tree_links_child(self) -> None:
-        self.assertEqual(resolve_session("latest", self.root), self.root_path.resolve())
+    def test_resolve_prefix_and_tree_links_child(self) -> None:
+        self.assertEqual(resolve_session(ROOT_ID[:12], self.root), self.root_path.resolve())
+        with self.assertRaises(FileNotFoundError):
+            resolve_session("latest", self.root)
         tree = build_tree(CHILD_ID[:12], self.root)
         self.assertEqual(tree["root_id"], ROOT_ID)
         self.assertEqual([node["id"] for node in tree["nodes"]], [ROOT_ID, CHILD_ID])
@@ -181,6 +183,14 @@ class CliTests(unittest.TestCase):
     def test_non_positive_limit_is_rejected(self) -> None:
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             cli.build_parser().parse_args(["list", "--limit", "0"])
+
+    def test_doctor_reports_newest_root_without_latest_alias(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            cli.main(["--json", "--sessions-dir", str(self.root), "doctor"])
+        data = json.loads(stdout.getvalue())["data"]
+        self.assertEqual(data["newest_root"]["id"], ROOT_ID)
+        self.assertNotIn("latest_root", data)
 
 
 if __name__ == "__main__":

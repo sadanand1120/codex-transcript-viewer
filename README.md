@@ -26,24 +26,26 @@ The installer adds the `codex-transcript` marketplace from GitHub and installs `
 
 ```bash
 codex-transcript list --limit 10
-codex-transcript render latest --output transcript.html
-codex-transcript browser latest
+codex-transcript render SESSION --output transcript.html
+codex-transcript browser SESSION
 ```
 
 `browser` writes a deterministic private HTML file under the system temporary directory and opens it with the default browser.
+
+The viewer keeps rolled-back turns under closed archive markers. Tool calls, tool outputs, and reasoning details are also collapsed by default.
 
 ## Agent commands
 
 ```bash
 codex-transcript --json doctor
-codex-transcript query latest --kind message --format jsonl --compact
+codex-transcript query SESSION --kind message --format jsonl --compact
 codex-transcript query SESSION --turn TURN_ID --compact
 codex-transcript export SESSION --format jsonl --compact --redact --output session.jsonl
 codex-transcript tree SESSION --format json
 codex-transcript raw SESSION --line 42 --redact
 ```
 
-`SESSION` accepts a JSONL path, exact session ID, unique ID prefix, or `latest`. `latest` means the newest root/user session.
+`SESSION` accepts a JSONL path, exact session ID, or unique ID prefix. Use `list` to discover session IDs.
 
 ## Data policy
 

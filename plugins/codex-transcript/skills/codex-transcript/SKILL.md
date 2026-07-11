@@ -15,7 +15,7 @@ codex-transcript --json doctor
 codex-transcript --json list --limit 10
 ```
 
-`SESSION` may be a JSONL path, exact session ID, unique ID prefix, or `latest`. `latest` resolves to the newest root/user session, not a subagent.
+`SESSION` may be a JSONL path, exact session ID, or unique ID prefix. Use `list` to discover the intended session first.
 
 ## Agent analysis
 

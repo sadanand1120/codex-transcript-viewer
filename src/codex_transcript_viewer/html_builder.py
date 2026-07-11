@@ -33,17 +33,7 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
 
     sidebar_items: list[str] = []
     message_blocks: list[str] = []
-    msg_idx = 0
-
-    for evt in events:
-        etype = evt["type"]
-        ts = format_ts(evt["ts"])
-        msg_idx += 1
-        anchor = f"msg-{msg_idx}"
-
-        handler = _EVENT_HANDLERS.get(etype)
-        if handler:
-            handler(evt, ts, anchor, sidebar_items, message_blocks)
+    _render_events(events, sidebar_items, message_blocks)
 
     css = _load_asset("style.css")
     js = _load_asset("viewer.js")
@@ -76,6 +66,43 @@ def build_html(meta: dict | None, events: list[dict]) -> str:
 # Per-event-type rendering functions
 # ---------------------------------------------------------------------------
 
+def _render_events(events, sidebar, messages, *, prefix="msg", include_sidebar=True):
+    hidden_sidebar: list[str] = []
+    for index, evt in enumerate(events, 1):
+        handler = _EVENT_HANDLERS.get(evt["type"])
+        if handler:
+            before = len(messages)
+            handler(
+                evt,
+                format_ts(evt["ts"]),
+                f"{prefix}-{index}",
+                sidebar if include_sidebar else hidden_sidebar,
+                messages,
+            )
+            if not include_sidebar:
+                role = _event_role(evt["type"])
+                for position in range(before, len(messages)):
+                    messages[position] = (
+                        f'<div class="rollback-event {role}">{messages[position]}</div>'
+                    )
+
+
+def _event_role(event_type):
+    if event_type == "user_message":
+        return "tree-role-user"
+    if event_type in {"assistant_text", "agent_commentary", "task_complete", "inter_agent_message"}:
+        return "tree-role-assistant"
+    if event_type in {"tool_call", "tool_output"}:
+        return "tree-role-tool"
+    if event_type == "reasoning":
+        return "tree-role-thinking"
+    if event_type == "turn_aborted":
+        return "tree-role-error"
+    if event_type == "thread_rolled_back":
+        return "tree-role-rollback"
+    return "tree-role-system"
+
+
 def _render_user_message(evt, ts, anchor, sidebar, messages):
     text_preview = evt["text"][:80].replace("\n", " ")
     sidebar.append(
@@ -92,16 +119,18 @@ def _render_user_message(evt, ts, anchor, sidebar, messages):
 
 
 def _render_reasoning(evt, ts, anchor, sidebar, messages):
+    preview = " ".join(evt["text"].split())[:80]
     sidebar.append(
         f'<a class="tree-node tree-role-thinking" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\U0001f4ad {escape(evt["text"][:60])}</span></a>'
     )
     messages.append(
-        f'<div class="thinking-block" id="{anchor}">'
+        f'<details class="thinking-block event-details" id="{anchor}">'
+        f'<summary class="event-summary">\U0001f4ad Reasoning · {escape(preview)}</summary>'
         f'<div class="message-timestamp">{ts}</div>'
-        f'<div class="thinking-text">{escape(evt["text"])}</div>'
-        f"</div>"
+        f'<div class="thinking-text event-detail-body">{escape(evt["text"])}</div>'
+        f"</details>"
     )
 
 
@@ -166,11 +195,12 @@ def _render_tool_call(evt, ts, anchor, sidebar, messages):
         args_display = f"<pre>{escape(arguments)}</pre>"
 
     messages.append(
-        f'<div class="tool-execution" id="{anchor}">'
+        f'<details class="tool-execution event-details" id="{anchor}">'
+        f'<summary class="event-summary"><span class="tool-name">{escape(name)}</span>'
+        f' · {escape(args_preview)}</summary>'
         f'<div class="message-timestamp">{ts}</div>'
-        f'<div class="tool-header"><span class="tool-name">{escape(name)}</span></div>'
-        f'<div class="tool-args">{args_display}</div>'
-        f"</div>"
+        f'<div class="tool-args event-detail-body">{args_display}</div>'
+        f"</details>"
     )
 
 
@@ -178,7 +208,7 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages):
     output = evt.get("output", "")
     if not isinstance(output, str):
         output = json.dumps(output, ensure_ascii=False, indent=2)
-    truncated = len(output) > 2000
+    preview = " ".join(output.split())[:80]
 
     sidebar.append(
         f'<a class="tree-node tree-role-tool" href="#{anchor}">'
@@ -186,14 +216,14 @@ def _render_tool_output(evt, ts, anchor, sidebar, messages):
         f'<span class="tree-content">\U0001f4e4 output ({len(output)} chars)</span></a>'
     )
 
-    if truncated:
-        body = (
-            f'<details class="tool-output"><summary>Show {len(output):,} characters</summary>'
-            f'<pre>{escape(output)}</pre></details>'
-        )
-    else:
-        body = f'<div class="tool-output"><pre>{escape(output)}</pre></div>'
-    messages.append(f'<div class="tool-execution success" id="{anchor}">{body}</div>')
+    messages.append(
+        f'<details class="tool-execution success event-details" id="{anchor}">'
+        f'<summary class="event-summary">\U0001f4e4 Output ({len(output):,} chars)'
+        f'{f" · {escape(preview)}" if preview else ""}</summary>'
+        f'<div class="message-timestamp">{ts}</div>'
+        f'<div class="tool-output event-detail-body"><pre>{escape(output)}</pre></div>'
+        f"</details>"
+    )
 
 
 def _render_task_complete(evt, ts, anchor, sidebar, messages):
@@ -242,16 +272,26 @@ def _render_turn_aborted(evt, ts, anchor, sidebar, messages):
 
 def _render_thread_rolled_back(evt, ts, anchor, sidebar, messages):
     n = evt["num_turns"]
+    rolled_messages: list[str] = []
+    _render_events(
+        evt.get("rolled_back_events", []),
+        [],
+        rolled_messages,
+        prefix=f"{anchor}-rolled",
+        include_sidebar=False,
+    )
     sidebar.append(
-        f'<a class="tree-node tree-role-system" href="#{anchor}">'
+        f'<a class="tree-node tree-role-rollback" href="#{anchor}">'
         f'<span class="tree-ts">{ts}</span> '
         f'<span class="tree-content">\u21a9 Rolled back {n} turn(s)</span></a>'
     )
     messages.append(
-        f'<div class="system-event" id="{anchor}">'
+        f'<details class="rollback-block" id="{anchor}">'
+        f'<summary class="rollback-summary">\u21a9 Rolled back {n} turn(s)'
+        f' · archived history</summary>'
         f'<div class="message-timestamp">{ts}</div>'
-        f'<span class="event-label">\u21a9 Rolled back {n} turn(s)</span>'
-        f"</div>"
+        f'<div class="rollback-content">{"".join(rolled_messages)}</div>'
+        f"</details>"
     )
 
 
